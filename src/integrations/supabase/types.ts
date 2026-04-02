@@ -14,7 +14,142 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      batch_transactions: {
+        Row: {
+          amount: number
+          batch_id: string
+          created_at: string
+          currency: string
+          from_stage: Database["public"]["Enums"]["supply_chain_stage"]
+          id: string
+          status: string
+          to_stage: Database["public"]["Enums"]["supply_chain_stage"]
+        }
+        Insert: {
+          amount: number
+          batch_id: string
+          created_at?: string
+          currency?: string
+          from_stage: Database["public"]["Enums"]["supply_chain_stage"]
+          id?: string
+          status?: string
+          to_stage: Database["public"]["Enums"]["supply_chain_stage"]
+        }
+        Update: {
+          amount?: number
+          batch_id?: string
+          created_at?: string
+          currency?: string
+          from_stage?: Database["public"]["Enums"]["supply_chain_stage"]
+          id?: string
+          status?: string
+          to_stage?: Database["public"]["Enums"]["supply_chain_stage"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "batch_transactions_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      batch_updates: {
+        Row: {
+          action: string
+          batch_id: string
+          created_at: string
+          details: string | null
+          handler: string | null
+          id: string
+          location: string | null
+          notes: string | null
+          stage: Database["public"]["Enums"]["supply_chain_stage"]
+          temperature: string | null
+        }
+        Insert: {
+          action: string
+          batch_id: string
+          created_at?: string
+          details?: string | null
+          handler?: string | null
+          id?: string
+          location?: string | null
+          notes?: string | null
+          stage: Database["public"]["Enums"]["supply_chain_stage"]
+          temperature?: string | null
+        }
+        Update: {
+          action?: string
+          batch_id?: string
+          created_at?: string
+          details?: string | null
+          handler?: string | null
+          id?: string
+          location?: string | null
+          notes?: string | null
+          stage?: Database["public"]["Enums"]["supply_chain_stage"]
+          temperature?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "batch_updates_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      batches: {
+        Row: {
+          assigned_supplier: string | null
+          created_at: string
+          crop_name: string
+          current_stage: Database["public"]["Enums"]["supply_chain_stage"]
+          farm_location: string
+          farmer_name: string
+          harvest_date: string | null
+          id: string
+          quantity: string
+          status: Database["public"]["Enums"]["batch_status"]
+          unit: string
+          updated_at: string
+          variety: string | null
+        }
+        Insert: {
+          assigned_supplier?: string | null
+          created_at?: string
+          crop_name: string
+          current_stage?: Database["public"]["Enums"]["supply_chain_stage"]
+          farm_location: string
+          farmer_name: string
+          harvest_date?: string | null
+          id: string
+          quantity: string
+          status?: Database["public"]["Enums"]["batch_status"]
+          unit?: string
+          updated_at?: string
+          variety?: string | null
+        }
+        Update: {
+          assigned_supplier?: string | null
+          created_at?: string
+          crop_name?: string
+          current_stage?: Database["public"]["Enums"]["supply_chain_stage"]
+          farm_location?: string
+          farmer_name?: string
+          harvest_date?: string | null
+          id?: string
+          quantity?: string
+          status?: Database["public"]["Enums"]["batch_status"]
+          unit?: string
+          updated_at?: string
+          variety?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +158,20 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      batch_status:
+        | "harvested"
+        | "created"
+        | "picked_up"
+        | "in_transit"
+        | "stored"
+        | "delivered"
+        | "processing"
+      supply_chain_stage:
+        | "farmer"
+        | "supplier"
+        | "distributor"
+        | "retailer"
+        | "consumer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +298,23 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      batch_status: [
+        "harvested",
+        "created",
+        "picked_up",
+        "in_transit",
+        "stored",
+        "delivered",
+        "processing",
+      ],
+      supply_chain_stage: [
+        "farmer",
+        "supplier",
+        "distributor",
+        "retailer",
+        "consumer",
+      ],
+    },
   },
 } as const
