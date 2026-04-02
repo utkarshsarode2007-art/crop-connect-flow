@@ -1,132 +1,211 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { Batch, StageUpdate, Transaction, UserRole, generateBatchId, STAGE_ORDER } from '@/lib/supply-chain-types';
+import type { Database } from '@/integrations/supabase/types';
+
+type DbBatch = Database['public']['Tables']['batches']['Row'];
+type DbUpdate = Database['public']['Tables']['batch_updates']['Row'];
+type DbTransaction = Database['public']['Tables']['batch_transactions']['Row'];
+
+function mapDbBatch(row: DbBatch, updates: DbUpdate[], transactions: DbTransaction[]): Batch {
+  return {
+    id: row.id,
+    cropName: row.crop_name,
+    variety: row.variety || '',
+    quantity: row.quantity,
+    unit: row.unit,
+    farmLocation: row.farm_location,
+    farmerName: row.farmer_name,
+    harvestDate: row.harvest_date || '',
+    currentStage: row.current_stage as UserRole,
+    status: row.status as Batch['status'],
+    assignedSupplier: row.assigned_supplier || undefined,
+    createdAt: new Date(row.created_at),
+    updates: updates.map(u => ({
+      id: u.id,
+      batchId: u.batch_id,
+      stage: u.stage as UserRole,
+      action: u.action,
+      details: u.details || '',
+      location: u.location || '',
+      handler: u.handler || '',
+      timestamp: new Date(u.created_at),
+      temperature: u.temperature || undefined,
+      notes: u.notes || undefined,
+    })),
+    transactions: transactions.map(t => ({
+      id: t.id,
+      batchId: t.batch_id,
+      from: t.from_stage as UserRole,
+      to: t.to_stage as UserRole,
+      amount: t.amount,
+      currency: t.currency,
+      timestamp: new Date(t.created_at),
+      status: t.status as 'pending' | 'completed',
+    })),
+  };
+}
 
 interface SupplyChainState {
   batches: Batch[];
   currentRole: UserRole;
+  loading: boolean;
   setCurrentRole: (role: UserRole) => void;
-  createBatch: (data: Omit<Batch, 'id' | 'currentStage' | 'status' | 'createdAt' | 'updates' | 'transactions'>) => Batch;
-  addUpdate: (batchId: string, update: Omit<StageUpdate, 'id' | 'timestamp'>) => void;
-  advanceStage: (batchId: string) => void;
+  createBatch: (data: Omit<Batch, 'id' | 'currentStage' | 'status' | 'createdAt' | 'updates' | 'transactions' | 'assignedSupplier'>) => Promise<Batch>;
+  addUpdate: (batchId: string, update: Omit<StageUpdate, 'id' | 'timestamp'>) => Promise<void>;
+  advanceStage: (batchId: string) => Promise<void>;
   getBatch: (batchId: string) => Batch | undefined;
+  acceptBatch: (batchId: string, supplierName: string) => Promise<void>;
+  updateBatchStatus: (batchId: string, status: Batch['status']) => Promise<void>;
+  refreshBatches: () => Promise<void>;
 }
-
-const SAMPLE_BATCHES: Batch[] = [
-  {
-    id: 'AGR-DEMO01-A1B2',
-    cropName: 'Organic Wheat',
-    variety: 'Hard Red Winter',
-    quantity: '2500',
-    unit: 'kg',
-    farmLocation: 'Punjab, India',
-    farmerName: 'Rajesh Patel',
-    harvestDate: '2026-03-15',
-    currentStage: 'distributor',
-    status: 'stored',
-    createdAt: new Date('2026-03-15'),
-    updates: [
-      { id: '1', batchId: 'AGR-DEMO01-A1B2', stage: 'farmer', action: 'Register Crop', details: 'Organic wheat harvested from Field Block 7', location: 'Punjab, India', handler: 'Rajesh Patel', timestamp: new Date('2026-03-15T06:00:00') },
-      { id: '2', batchId: 'AGR-DEMO01-A1B2', stage: 'farmer', action: 'Ship to Supplier', details: 'Loaded onto refrigerated truck #TRK-4421', location: 'Punjab, India', handler: 'Rajesh Patel', timestamp: new Date('2026-03-16T08:30:00') },
-      { id: '3', batchId: 'AGR-DEMO01-A1B2', stage: 'supplier', action: 'Pick Up Batch', details: 'Picked up, temperature: 18°C', location: 'Punjab Highway', handler: 'TransCo Logistics', timestamp: new Date('2026-03-16T10:00:00'), temperature: '18°C' },
-      { id: '4', batchId: 'AGR-DEMO01-A1B2', stage: 'supplier', action: 'Deliver to Warehouse', details: 'Delivered to Central Warehouse Delhi', location: 'Delhi NCR', handler: 'TransCo Logistics', timestamp: new Date('2026-03-17T14:00:00'), temperature: '17°C' },
-      { id: '5', batchId: 'AGR-DEMO01-A1B2', stage: 'distributor', action: 'Receive Shipment', details: 'Received and stored in Bay 12, Section C', location: 'Delhi NCR Warehouse', handler: 'FreshStore Dist.', timestamp: new Date('2026-03-17T15:30:00') },
-      { id: '6', batchId: 'AGR-DEMO01-A1B2', stage: 'distributor', action: 'Quality Check', details: 'Moisture 12%, Grade A certified', location: 'Delhi NCR Warehouse', handler: 'QA Team', timestamp: new Date('2026-03-18T09:00:00') },
-    ],
-    transactions: [
-      { id: 't1', batchId: 'AGR-DEMO01-A1B2', from: 'farmer', to: 'supplier', amount: 45000, currency: 'INR', timestamp: new Date('2026-03-16'), status: 'completed' },
-      { id: 't2', batchId: 'AGR-DEMO01-A1B2', from: 'supplier', to: 'distributor', amount: 52000, currency: 'INR', timestamp: new Date('2026-03-17'), status: 'completed' },
-    ],
-  },
-  {
-    id: 'AGR-DEMO02-C3D4',
-    cropName: 'Basmati Rice',
-    variety: 'Pusa 1121',
-    quantity: '1800',
-    unit: 'kg',
-    farmLocation: 'Haryana, India',
-    farmerName: 'Amrita Singh',
-    harvestDate: '2026-03-20',
-    currentStage: 'retailer',
-    status: 'delivered',
-    createdAt: new Date('2026-03-20'),
-    updates: [
-      { id: '7', batchId: 'AGR-DEMO02-C3D4', stage: 'farmer', action: 'Register Crop', details: 'Premium basmati rice from organic paddies', location: 'Haryana, India', handler: 'Amrita Singh', timestamp: new Date('2026-03-20T07:00:00') },
-      { id: '8', batchId: 'AGR-DEMO02-C3D4', stage: 'supplier', action: 'Pick Up Batch', details: 'Collected in sealed containers', location: 'Haryana Highway', handler: 'AgriMove Transport', timestamp: new Date('2026-03-21T09:00:00') },
-      { id: '9', batchId: 'AGR-DEMO02-C3D4', stage: 'distributor', action: 'Receive Shipment', details: 'Stored in climate-controlled unit', location: 'Mumbai Warehouse', handler: 'GrainHub Dist.', timestamp: new Date('2026-03-23T11:00:00') },
-      { id: '10', batchId: 'AGR-DEMO02-C3D4', stage: 'retailer', action: 'Receive Stock', details: 'Shelved in organic section', location: 'FreshMart Store #42', handler: 'FreshMart', timestamp: new Date('2026-03-25T08:00:00') },
-    ],
-    transactions: [
-      { id: 't3', batchId: 'AGR-DEMO02-C3D4', from: 'farmer', to: 'supplier', amount: 72000, currency: 'INR', timestamp: new Date('2026-03-21'), status: 'completed' },
-      { id: 't4', batchId: 'AGR-DEMO02-C3D4', from: 'supplier', to: 'distributor', amount: 85000, currency: 'INR', timestamp: new Date('2026-03-23'), status: 'completed' },
-      { id: 't5', batchId: 'AGR-DEMO02-C3D4', from: 'distributor', to: 'retailer', amount: 98000, currency: 'INR', timestamp: new Date('2026-03-25'), status: 'completed' },
-    ],
-  },
-];
 
 const SupplyChainContext = createContext<SupplyChainState | null>(null);
 
 export function SupplyChainProvider({ children }: { children: React.ReactNode }) {
-  const [batches, setBatches] = useState<Batch[]>(SAMPLE_BATCHES);
+  const [batches, setBatches] = useState<Batch[]>([]);
   const [currentRole, setCurrentRole] = useState<UserRole>('farmer');
+  const [loading, setLoading] = useState(true);
 
-  const createBatch = useCallback((data: Omit<Batch, 'id' | 'currentStage' | 'status' | 'createdAt' | 'updates' | 'transactions'>) => {
+  const fetchAll = useCallback(async () => {
+    const [{ data: batchRows }, { data: updateRows }, { data: txRows }] = await Promise.all([
+      supabase.from('batches').select('*').order('created_at', { ascending: false }),
+      supabase.from('batch_updates').select('*').order('created_at', { ascending: true }),
+      supabase.from('batch_transactions').select('*').order('created_at', { ascending: true }),
+    ]);
+
+    if (batchRows) {
+      const mapped = batchRows.map(b =>
+        mapDbBatch(
+          b,
+          (updateRows || []).filter(u => u.batch_id === b.id),
+          (txRows || []).filter(t => t.batch_id === b.id),
+        )
+      );
+      setBatches(mapped);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchAll();
+
+    // Real-time subscriptions
+    const channel = supabase
+      .channel('supply-chain-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'batches' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'batch_updates' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'batch_transactions' }, () => fetchAll())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchAll]);
+
+  const createBatch = useCallback(async (data: Omit<Batch, 'id' | 'currentStage' | 'status' | 'createdAt' | 'updates' | 'transactions' | 'assignedSupplier'>) => {
     const id = generateBatchId();
+    await supabase.from('batches').insert({
+      id,
+      crop_name: data.cropName,
+      variety: data.variety,
+      quantity: data.quantity,
+      unit: data.unit,
+      farm_location: data.farmLocation,
+      farmer_name: data.farmerName,
+      harvest_date: data.harvestDate,
+      current_stage: 'farmer',
+      status: 'created',
+    });
+
+    await supabase.from('batch_updates').insert({
+      batch_id: id,
+      stage: 'farmer' as const,
+      action: 'Register Crop',
+      details: `${data.cropName} (${data.variety}) registered — ${data.quantity} ${data.unit}`,
+      location: data.farmLocation,
+      handler: data.farmerName,
+    });
+
     const batch: Batch = {
       ...data,
       id,
       currentStage: 'farmer',
-      status: 'harvested',
+      status: 'created',
       createdAt: new Date(),
-      updates: [{
-        id: crypto.randomUUID(),
-        batchId: id,
-        stage: 'farmer',
-        action: 'Register Crop',
-        details: `${data.cropName} (${data.variety}) registered — ${data.quantity} ${data.unit}`,
-        location: data.farmLocation,
-        handler: data.farmerName,
-        timestamp: new Date(),
-      }],
+      updates: [],
       transactions: [],
     };
-    setBatches(prev => [batch, ...prev]);
     return batch;
   }, []);
 
-  const addUpdate = useCallback((batchId: string, update: Omit<StageUpdate, 'id' | 'timestamp'>) => {
-    setBatches(prev => prev.map(b => {
-      if (b.id !== batchId) return b;
-      return {
-        ...b,
-        updates: [...b.updates, { ...update, id: crypto.randomUUID(), timestamp: new Date() }],
-      };
-    }));
+  const addUpdate = useCallback(async (batchId: string, update: Omit<StageUpdate, 'id' | 'timestamp'>) => {
+    await supabase.from('batch_updates').insert({
+      batch_id: batchId,
+      stage: update.stage as Database['public']['Enums']['supply_chain_stage'],
+      action: update.action,
+      details: update.details,
+      location: update.location,
+      handler: update.handler,
+      temperature: update.temperature,
+      notes: update.notes,
+    });
   }, []);
 
-  const advanceStage = useCallback((batchId: string) => {
-    setBatches(prev => prev.map(b => {
-      if (b.id !== batchId) return b;
-      const idx = STAGE_ORDER.indexOf(b.currentStage);
-      if (idx >= STAGE_ORDER.length - 1) return b;
-      const nextStage = STAGE_ORDER[idx + 1];
-      const tx: Transaction = {
-        id: crypto.randomUUID(),
-        batchId,
-        from: b.currentStage,
-        to: nextStage,
-        amount: Math.floor(Math.random() * 50000) + 20000,
-        currency: 'INR',
-        timestamp: new Date(),
-        status: 'completed',
-      };
-      return { ...b, currentStage: nextStage, transactions: [...b.transactions, tx] };
-    }));
+  const advanceStage = useCallback(async (batchId: string) => {
+    const batch = batches.find(b => b.id === batchId);
+    if (!batch) return;
+    const idx = STAGE_ORDER.indexOf(batch.currentStage);
+    if (idx >= STAGE_ORDER.length - 1) return;
+    const nextStage = STAGE_ORDER[idx + 1];
+
+    await supabase.from('batches').update({
+      current_stage: nextStage as Database['public']['Enums']['supply_chain_stage'],
+    }).eq('id', batchId);
+
+    await supabase.from('batch_transactions').insert({
+      batch_id: batchId,
+      from_stage: batch.currentStage as Database['public']['Enums']['supply_chain_stage'],
+      to_stage: nextStage as Database['public']['Enums']['supply_chain_stage'],
+      amount: Math.floor(Math.random() * 50000) + 20000,
+      currency: 'INR',
+    });
+  }, [batches]);
+
+  const acceptBatch = useCallback(async (batchId: string, supplierName: string) => {
+    await supabase.from('batches').update({
+      status: 'picked_up',
+      assigned_supplier: supplierName,
+      current_stage: 'supplier' as const,
+    }).eq('id', batchId);
+
+    await supabase.from('batch_updates').insert({
+      batch_id: batchId,
+      stage: 'supplier' as const,
+      action: 'Pick Up Batch',
+      details: `Batch accepted by ${supplierName}`,
+      handler: supplierName,
+    });
+
+    await supabase.from('batch_transactions').insert({
+      batch_id: batchId,
+      from_stage: 'farmer' as const,
+      to_stage: 'supplier' as const,
+      amount: Math.floor(Math.random() * 50000) + 20000,
+      currency: 'INR',
+    });
+  }, []);
+
+  const updateBatchStatus = useCallback(async (batchId: string, status: Batch['status']) => {
+    await supabase.from('batches').update({
+      status: status as Database['public']['Enums']['batch_status'],
+    }).eq('id', batchId);
   }, []);
 
   const getBatch = useCallback((batchId: string) => batches.find(b => b.id === batchId), [batches]);
 
+  const refreshBatches = fetchAll;
+
   return (
-    <SupplyChainContext.Provider value={{ batches, currentRole, setCurrentRole, createBatch, addUpdate, advanceStage, getBatch }}>
+    <SupplyChainContext.Provider value={{ batches, currentRole, loading, setCurrentRole, createBatch, addUpdate, advanceStage, getBatch, acceptBatch, updateBatchStatus, refreshBatches }}>
       {children}
     </SupplyChainContext.Provider>
   );
