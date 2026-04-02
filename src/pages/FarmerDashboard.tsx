@@ -6,21 +6,38 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function FarmerDashboard() {
-  const { batches, createBatch } = useSupplyChain();
+  const { batches, createBatch, loading } = useSupplyChain();
   const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ cropName: '', variety: '', quantity: '', unit: 'kg', farmLocation: '', farmerName: '', harvestDate: '' });
 
   const farmerBatches = batches.filter(b => b.currentStage === 'farmer' || b.farmerName);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.cropName || !form.farmerName) return;
-    createBatch(form);
-    setForm({ cropName: '', variety: '', quantity: '', unit: 'kg', farmLocation: '', farmerName: '', harvestDate: '' });
-    setOpen(false);
+    setSubmitting(true);
+    try {
+      const batch = await createBatch(form);
+      toast.success(`Batch ${batch.id} created!`);
+      setForm({ cropName: '', variety: '', quantity: '', unit: 'kg', farmLocation: '', farmerName: '', harvestDate: '' });
+      setOpen(false);
+    } catch {
+      toast.error('Failed to create batch');
+    }
+    setSubmitting(false);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -56,7 +73,10 @@ export default function FarmerDashboard() {
                 <Label>Harvest Date</Label>
                 <Input type="date" value={form.harvestDate} onChange={e => setForm(prev => ({ ...prev, harvestDate: e.target.value }))} />
               </div>
-              <Button onClick={handleCreate} className="w-full">Generate Batch ID & Register</Button>
+              <Button onClick={handleCreate} className="w-full" disabled={submitting}>
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Generate Batch ID & Register
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

@@ -31,17 +31,18 @@ export function BatchCard({ batch, index }: BatchCardProps) {
           {batch.id}
         </Badge>
       </div>
-      <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+      <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3 flex-wrap">
         <span>📦 {batch.quantity} {batch.unit}</span>
         <span>📍 {batch.farmLocation}</span>
+        {batch.assignedSupplier && <span>🚛 {batch.assignedSupplier}</span>}
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span>{config.icon}</span>
           <span className="text-sm font-medium text-foreground">{config.label}</span>
         </div>
-        <Badge className={`bg-${config.color}/10 text-${config.color} border-${config.color}/20`}>
-          {batch.status}
+        <Badge className={`bg-${config.color}/10 text-${config.color} border-${config.color}/20 capitalize`}>
+          {batch.status.replace('_', ' ')}
         </Badge>
       </div>
       <div className="mt-3 flex gap-1">

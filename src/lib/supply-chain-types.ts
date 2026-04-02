@@ -34,7 +34,8 @@ export interface Batch {
   farmerName: string;
   harvestDate: string;
   currentStage: UserRole;
-  status: 'in-transit' | 'stored' | 'delivered' | 'harvested' | 'processing';
+  status: 'in-transit' | 'stored' | 'delivered' | 'harvested' | 'processing' | 'created' | 'picked_up' | 'in_transit';
+  assignedSupplier?: string;
   createdAt: Date;
   updates: StageUpdate[];
   transactions: Transaction[];
