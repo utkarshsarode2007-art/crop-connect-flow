@@ -41,8 +41,8 @@ export function BatchCard({ batch, index }: BatchCardProps) {
           <span>{config.icon}</span>
           <span className="text-sm font-medium text-foreground">{config.label}</span>
         </div>
-        <Badge className={`bg-${config.color}/10 text-${config.color} border-${config.color}/20`}>
-          {batch.status}
+        <Badge className={`bg-${config.color}/10 text-${config.color} border-${config.color}/20 capitalize`}>
+          {batch.status.replace('_', ' ')}
         </Badge>
       </div>
       <div className="mt-3 flex gap-1">
